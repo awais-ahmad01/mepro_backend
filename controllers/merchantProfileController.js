@@ -1,13 +1,8 @@
-// controllers/businessDetailsController.js
 import MerchantProfile from '../models/merchantProfile.js';
 import User from '../models/user.js';
-
-import cloudinary from '../config/cloudinary.js';
 import fs from 'fs';
-import path from 'path';
-
-
-
+import { validateStepData, prepareResponse, getTimeInMinutes, 
+  uploadToCloudinary, deleteFromCloudinary, getNextAction } from '../utils/helpers.js';
 
 // Service categories and their common services (for suggestions)
 const SERVICE_CATEGORIES = {
@@ -43,217 +38,6 @@ const SERVICE_CATEGORIES = {
 
 
 
-// Add this helper function at the top of the file (after imports)
-const getTimeInMinutes = (timeStr) => {
-  if (!timeStr) return 0;
-  const [hours, minutes] = timeStr.split(':').map(Number);
-  return hours * 60 + minutes;
-};
-
-// Then use it in both saveStepData and saveOpeningHours functions
-
-// Helper: Validate step data
-const validateStepData = (step, data) => {
-  switch (step) {
-    case 1:
-      if (!data.legalBusinessName || data.legalBusinessName.trim().length < 2) {
-        throw new Error('Legal business name is required (min 2 characters)');
-      }
-      if (!data.aboutBusiness || data.aboutBusiness.trim().length < 10) {
-        throw new Error('Business description is required (min 10 characters)');
-      }
-      if (!data.businessStructure) {
-        throw new Error('Business structure is required');
-      }
-      if (!['sole_trader', 'limited_company', 'partnership', 'limited_liability_partnership'].includes(data.businessStructure)) {
-        throw new Error('Invalid business structure selected');
-      }
-      break;
-      
-    case 2:
-      if (!data.primaryContactName || data.primaryContactName.trim().length < 2) {
-        throw new Error('Primary contact name is required');
-      }
-      if (!data.businessPhone || data.businessPhone.trim().length < 5) {
-        throw new Error('Business phone number is required');
-      }
-      // Validate email format if provided
-      if (data.businessEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.businessEmail)) {
-        throw new Error('Invalid business email format');
-      }
-      break;
-      
-    case 3:
-      if (!data.address?.postcode || data.address.postcode.trim().length < 3) {
-        throw new Error('Postcode is required');
-      }
-      if (!data.address?.street || data.address.street.trim().length < 2) {
-        throw new Error('Street name is required');
-      }
-      if (!data.address?.townCity || data.address.townCity.trim().length < 2) {
-        throw new Error('Town/City is required');
-      }
-      break;
-      
-    case 4:
-       // Opening hours validation
-      if (!data.openingHours || typeof data.openingHours !== 'object') {
-        throw new Error('Opening hours data is required');
-      }
-      
-      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
-      
-      days.forEach(day => {
-        const dayData = data.openingHours[day];
-        if (dayData) {
-          // If not closed, must have opening and closing times
-          if (dayData.isClosed !== true) {
-            if (!dayData.openingTime || !dayData.closingTime) {
-              throw new Error(`${day} must have both opening and closing times when not closed`);
-            }
-            
-            if (!timeRegex.test(dayData.openingTime) || !timeRegex.test(dayData.closingTime)) {
-              throw new Error(`${day} times must be in HH:MM format (24-hour)`);
-            }
-            
-            // Validate opening time is before closing time
-            const getTimeInMinutes = (timeStr) => {
-              const [hours, minutes] = timeStr.split(':').map(Number);
-              return hours * 60 + minutes;
-            };
-            
-            const openTime = getTimeInMinutes(dayData.openingTime);
-            const closeTime = getTimeInMinutes(dayData.closingTime);
-            
-            if (openTime >= closeTime) {
-              throw new Error(`${day} closing time must be after opening time`);
-            }
-            
-            // Validate breaks if they exist
-            if (Array.isArray(dayData.breaks)) {
-              dayData.breaks.forEach((breakSlot, index) => {
-                if (breakSlot.start && breakSlot.end) {
-                  if (!timeRegex.test(breakSlot.start) || !timeRegex.test(breakSlot.end)) {
-                    throw new Error(`${day} break ${index + 1} times must be in HH:MM format`);
-                  }
-                  
-                  const breakStart = getTimeInMinutes(breakSlot.start);
-                  const breakEnd = getTimeInMinutes(breakSlot.end);
-                  
-                  if (breakStart >= breakEnd) {
-                    throw new Error(`${day} break ${index + 1} end time must be after start time`);
-                  }
-                  
-                  if (breakStart < openTime || breakEnd > closeTime) {
-                    throw new Error(`${day} break ${index + 1} must be within opening hours`);
-                  }
-                }
-              });
-            }
-          }
-        }
-      });
-      break;
-      
-      
-    case 5:
-      if (!data.businessCategory) {
-        throw new Error('Business category is required');
-      }
-      if (!SERVICE_CATEGORIES[data.businessCategory]) {
-        throw new Error('Invalid business category selected');
-      }
-      if (!data.services || data.services.length === 0) {
-        throw new Error('At least one service must be selected');
-      }
-      // Validate each service
-      data.services.forEach((service, index) => {
-        if (!service.name || service.name.trim().length === 0) {
-          throw new Error(`Service at position ${index + 1} must have a name`);
-        }
-      });
-      break;
-      
-    case 6:
-      if (!data.loyaltyTiers?.bronze || !data.loyaltyTiers?.silver || !data.loyaltyTiers?.gold) {
-        throw new Error('All loyalty tiers are required');
-      }
-      // Validate tier progression
-      const bronze = parseInt(data.loyaltyTiers.bronze);
-      const silver = parseInt(data.loyaltyTiers.silver);
-      const gold = parseInt(data.loyaltyTiers.gold);
-      
-      if (isNaN(bronze) || isNaN(silver) || isNaN(gold)) {
-        throw new Error('Tier points must be numbers');
-      }
-      if (bronze <= 0 || silver <= 0 || gold <= 0) {
-        throw new Error('Tier points must be positive numbers');
-      }
-      if (bronze >= silver || silver >= gold) {
-        throw new Error('Tier points must increase: Bronze < Silver < Gold');
-      }
-      break;
-  }
-};
-
-// Helper: Prepare response with next steps
-// Update prepareResponse function
-const prepareResponse = (profile) => {
-  const response = {
-    success: true,
-    profile: {
-      registrationStep: profile.registrationStep,
-      isRegistrationComplete: profile.isRegistrationComplete,
-      lastSavedAt: profile.lastSavedAt
-    }
-  };
-  
-  // Include saved data for the current step - UPDATED FIELD NAMES
-  switch (profile.registrationStep) {
-    case 1:
-      response.profile.step1 = {
-        legalBusinessName: profile.legalBusinessName,
-        aboutBusiness: profile.aboutBusiness,
-        businessStructure: profile.businessStructure
-      };
-      break;
-    case 2:
-      response.profile.step2 = {
-        primaryContactName: profile.primaryContactName,
-        businessEmail: profile.businessEmail,
-        businessPhone: profile.businessPhone,
-        website: profile.website,
-        socialMedia: profile.socialMedia
-      };
-      break;
-    case 3:
-      response.profile.step3 = {
-        address: profile.address
-      };
-      break;
-    case 4:
-      response.profile.step4 = {
-        openingHours: profile.openingHours // FIXED: openingHours not branding
-      };
-      break;
-    case 5:
-      response.profile.step5 = {
-        businessCategory: profile.businessCategory, // FIXED
-        earningRate: profile.earningRate, // FIXED
-        services: profile.services,
-        suggestedServices: SERVICE_CATEGORIES[profile.businessCategory] || []
-      };
-      break;
-    case 6:
-      response.profile.step6 = {
-        loyaltyTiers: profile.loyaltyTiers
-      };
-      break;
-  }
-  
-  return response;
-};
 
 // 1. Get Current Registration Progress
 export const getRegistrationProgress = async (req, res) => {
@@ -273,11 +57,12 @@ export const getRegistrationProgress = async (req, res) => {
     
     // Get user status to determine if they can continue
     const user = await User.findById(userId).select('status');
-
+    
     console.log("user:", user);
     
     // Check if user is at correct stage
-    if (user.status !== 'pending_approval') {
+    // UPDATE: Allow access if status is 'pending_approval' OR 'active'
+    if (!['pending_approval', 'active'].includes(user.status)) {
       return res.status(400).json({
         success: false,
         error: 'Complete password setup first',
@@ -285,8 +70,17 @@ export const getRegistrationProgress = async (req, res) => {
       });
     }
     
+    // LOGIC FIX: If registration was marked complete but user is not at step 6,
+    // it means they navigated back - mark as incomplete
+    if (profile.isRegistrationComplete && profile.registrationStep < 6) {
+      console.log(`⚠️ Registration marked complete but user at step ${profile.registrationStep} - fixing status`);
+      profile.isRegistrationComplete = false;
+      profile.adminStatus = 'pending_review';
+      await profile.save();
+    }
+    
     const response = prepareResponse(profile);
-
+    
     console.log("response:", response);
     
     // Add suggested services if on step 5
@@ -308,7 +102,6 @@ export const getRegistrationProgress = async (req, res) => {
 };
 
 // 2. Save Step Data (Updated for new fields)
-// In saveStepData function, update case 4:
 export const saveStepData = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -339,6 +132,18 @@ export const saveStepData = async (req, res) => {
     let profile = await MerchantProfile.findOne({ userId });
     if (!profile) {
       profile = await MerchantProfile.create({ userId });
+    }
+    
+    // IMPORTANT: If saving a step that's BEFORE the current completed step,
+    // mark registration as incomplete and reset submission status
+    if (stepNumber < profile.registrationStep && profile.isRegistrationComplete) {
+      console.log(`⚠️ Editing step ${stepNumber} (completed registration at step ${profile.registrationStep}) - marking incomplete`);
+      profile.isRegistrationComplete = false;
+      profile.adminStatus = 'pending_review';
+      profile.submittedAt = null;
+      
+      // Also update the registration step to match what we're editing
+      profile.registrationStep = stepNumber;
     }
     
     // Validate data for this step
@@ -392,92 +197,92 @@ export const saveStepData = async (req, res) => {
         
       case 4:
         // Handle opening hours data with single opening/closing time and multiple breaks
-  if (data.openingHours) {
-    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-    
-    days.forEach(day => {
-      if (data.openingHours[day]) {
-        const dayData = data.openingHours[day];
-        
-        // If closed, clear all times and breaks
-        if (dayData.isClosed === true) {
-          profile.openingHours[day] = {
-            isClosed: true,
-            openingTime: null,
-            closingTime: null,
-            breaks: []
-          };
-        } else {
-          // Validate opening and closing times
-          if (!dayData.openingTime || !dayData.closingTime) {
-            throw new Error(`Day ${day} must have both opening and closing times when not closed`);
-          }
+        if (data.openingHours) {
+          const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
           
-          // Validate time format
-          const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
-          if (!timeRegex.test(dayData.openingTime) || !timeRegex.test(dayData.closingTime)) {
-            throw new Error(`Day ${day} times must be in HH:MM format (24-hour)`);
-          }
-          
-          // Validate time logic
-          const openHour = parseInt(dayData.openingTime.split(':')[0]);
-          const openMin = parseInt(dayData.openingTime.split(':')[1]);
-          const closeHour = parseInt(dayData.closingTime.split(':')[0]);
-          const closeMin = parseInt(dayData.closingTime.split(':')[1]);
-          
-          const openTime = openHour * 60 + openMin;
-          const closeTime = closeHour * 60 + closeMin;
-          
-          if (openTime >= closeTime) {
-            throw new Error(`Day ${day} closing time must be after opening time`);
-          }
-          
-          // Validate and save breaks
-          const validatedBreaks = [];
-          if (Array.isArray(dayData.breaks)) {
-            for (const breakSlot of dayData.breaks) {
-              if (breakSlot.start && breakSlot.end) {
+          days.forEach(day => {
+            if (data.openingHours[day]) {
+              const dayData = data.openingHours[day];
+              
+              // If closed, clear all times and breaks
+              if (dayData.isClosed === true) {
+                profile.openingHours[day] = {
+                  isClosed: true,
+                  openingTime: null,
+                  closingTime: null,
+                  breaks: []
+                };
+              } else {
+                // Validate opening and closing times
+                if (!dayData.openingTime || !dayData.closingTime) {
+                  throw new Error(`Day ${day} must have both opening and closing times when not closed`);
+                }
+                
                 // Validate time format
-                if (!timeRegex.test(breakSlot.start) || !timeRegex.test(breakSlot.end)) {
-                  throw new Error(`Day ${day} break times must be in HH:MM format`);
+                const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+                if (!timeRegex.test(dayData.openingTime) || !timeRegex.test(dayData.closingTime)) {
+                  throw new Error(`Day ${day} times must be in HH:MM format (24-hour)`);
                 }
                 
-                // Validate break is within opening hours
-                const breakStart = getTimeInMinutes(breakSlot.start);
-                const breakEnd = getTimeInMinutes(breakSlot.end);
+                // Validate time logic
+                const openHour = parseInt(dayData.openingTime.split(':')[0]);
+                const openMin = parseInt(dayData.openingTime.split(':')[1]);
+                const closeHour = parseInt(dayData.closingTime.split(':')[0]);
+                const closeMin = parseInt(dayData.closingTime.split(':')[1]);
                 
-                if (breakStart < openTime || breakEnd > closeTime) {
-                  throw new Error(`Day ${day} breaks must be within opening hours (${dayData.openingTime}-${dayData.closingTime})`);
+                const openTime = openHour * 60 + openMin;
+                const closeTime = closeHour * 60 + closeMin;
+                
+                if (openTime >= closeTime) {
+                  throw new Error(`Day ${day} closing time must be after opening time`);
                 }
                 
-                if (breakStart >= breakEnd) {
-                  throw new Error(`Day ${day} break end time must be after start time`);
+                // Validate and save breaks
+                const validatedBreaks = [];
+                if (Array.isArray(dayData.breaks)) {
+                  for (const breakSlot of dayData.breaks) {
+                    if (breakSlot.start && breakSlot.end) {
+                      // Validate time format
+                      if (!timeRegex.test(breakSlot.start) || !timeRegex.test(breakSlot.end)) {
+                        throw new Error(`Day ${day} break times must be in HH:MM format`);
+                      }
+                      
+                      // Validate break is within opening hours
+                      const breakStart = getTimeInMinutes(breakSlot.start);
+                      const breakEnd = getTimeInMinutes(breakSlot.end);
+                      
+                      if (breakStart < openTime || breakEnd > closeTime) {
+                        throw new Error(`Day ${day} breaks must be within opening hours (${dayData.openingTime}-${dayData.closingTime})`);
+                      }
+                      
+                      if (breakStart >= breakEnd) {
+                        throw new Error(`Day ${day} break end time must be after start time`);
+                      }
+                      
+                      validatedBreaks.push({
+                        start: breakSlot.start,
+                        end: breakSlot.end
+                      });
+                    }
+                  }
                 }
                 
-                validatedBreaks.push({
-                  start: breakSlot.start,
-                  end: breakSlot.end
-                });
+                profile.openingHours[day] = {
+                  isClosed: false,
+                  openingTime: dayData.openingTime,
+                  closingTime: dayData.closingTime,
+                  breaks: validatedBreaks
+                };
               }
             }
-          }
-          
-          profile.openingHours[day] = {
-            isClosed: false,
-            openingTime: dayData.openingTime,
-            closingTime: dayData.closingTime,
-            breaks: validatedBreaks
-          };
+          });
+        } else {
+          return res.status(400).json({
+            success: false,
+            error: 'Opening hours data is required for step 4'
+          });
         }
-      }
-    });
-  } else {
-    return res.status(400).json({
-      success: false,
-      error: 'Opening hours data is required for step 4'
-    });
-  }
-  break;
+        break;
         
       case 5:
         profile.businessCategory = data.businessCategory;
@@ -487,21 +292,27 @@ export const saveStepData = async (req, res) => {
         if (data.services && Array.isArray(data.services)) {
           profile.services = data.services.map(service => ({
             name: service.name?.trim(),
-            categorySpecific: service.categorySpecific || false
+            // categorySpecific: service.categorySpecific || false
           }));
         }
+
+        console.log("profile.services:", profile.services);
         break;
         
       case 6:
         profile.loyaltyTiers = {
           bronze: parseInt(data.loyaltyTiers.bronze) || 5000,
           silver: parseInt(data.loyaltyTiers.silver) || 15000,
-          gold: parseInt(data.loyaltyTiers.gold) || 30000
+          gold: parseInt(data.loyaltyTiers.gold) || 30000,
+          platinum: parseInt(data.loyaltyTiers.platinum) || 50000,
+          champion: parseInt(data.loyaltyTiers.champion) || 5000,
+          ultimate: parseInt(data.loyaltyTiers.ultimate) || 50000
         };
         break;
     }
     
     // Update registration step if moving forward
+    // Only update if we're not editing a previous step (handled above)
     if (stepNumber > profile.registrationStep) {
       profile.registrationStep = stepNumber;
     }
@@ -511,14 +322,27 @@ export const saveStepData = async (req, res) => {
     await profile.save();
     
     console.log(`✅ Step ${stepNumber} saved successfully for user: ${userId}`);
+    console.log(`📊 Registration status: isRegistrationComplete = ${profile.isRegistrationComplete}`);
+    console.log(`📊 Current step: ${profile.registrationStep}`);
     
     // Prepare response with updated progress
     const response = prepareResponse(profile);
     response.message = `Step ${stepNumber} saved successfully`;
     
-    // If this is step 6, mark as complete
+    // If this is step 6 AND all data is complete, mark as ready for submission
     if (stepNumber === 6) {
-      response.nextAction = 'review_submission';
+      // Check if all required fields are filled for step 6
+      const hasAllTiers = profile.loyaltyTiers?.bronze && 
+                         profile.loyaltyTiers?.silver && 
+                         profile.loyaltyTiers?.gold;
+      
+      if (hasAllTiers) {
+        response.nextAction = 'review_submission';
+        response.isReadyForSubmission = true;
+      } else {
+        response.nextAction = 'complete_step';
+        response.isReadyForSubmission = false;
+      }
     } else {
       response.nextStep = stepNumber + 1;
     }
@@ -526,6 +350,11 @@ export const saveStepData = async (req, res) => {
     // Add suggested services if step 5
     if (stepNumber === 5 && profile.businessCategory) {
       response.suggestedServices = SERVICE_CATEGORIES[profile.businessCategory] || [];
+    }
+    
+    // Add warnings if editing after submission
+    if (profile.submittedAt && !profile.isRegistrationComplete) {
+      response.warning = 'Changes made after submission require re-approval';
     }
     
     res.status(200).json(response);
@@ -1084,17 +913,27 @@ export const updateRegistrationStep = async (req, res) => {
         });
       }
       
+      // CRITICAL FIX: If user navigates BACK to edit a step, mark registration as incomplete
+      if (stepNumber < profile.registrationStep && profile.isRegistrationComplete) {
+        console.log(`⚠️ User navigating back from step ${profile.registrationStep} to step ${stepNumber} - marking registration incomplete`);
+        profile.isRegistrationComplete = false;
+        profile.adminStatus = 'pending_review'; // Reset admin status
+        profile.submittedAt = null; // Clear submission timestamp
+      }
+      
       profile.registrationStep = stepNumber;
       profile.lastSavedAt = new Date();
       await profile.save();
     }
     
     console.log(`✅ Registration step updated to ${stepNumber}`);
+    console.log(`📊 Registration status: isRegistrationComplete = ${profile.isRegistrationComplete}`);
     
     res.status(200).json({
       success: true,
       message: `Navigation to step ${stepNumber} successful`,
-      currentStep: profile.registrationStep
+      currentStep: profile.registrationStep,
+      isRegistrationComplete: profile.isRegistrationComplete
     });
     
   } catch (error) {
@@ -1107,7 +946,7 @@ export const updateRegistrationStep = async (req, res) => {
 };
 
 // 5. Submit for Admin Review (After all steps complete)
-// 5. Submit for Admin Review (After all steps complete)
+
 export const submitForReview = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -1234,7 +1073,6 @@ export const submitForReview = async (req, res) => {
 };
 
 // 6. Get Complete Profile (for review screen)
-// 6. Get Complete Profile (for review screen)
 export const getCompleteProfile = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -1302,57 +1140,6 @@ export const getCompleteProfile = async (req, res) => {
 };
 
 
-
-
-
-
-
-// Helper function to upload to Cloudinary (optimized for mobile)
-const uploadToCloudinary = async (filePath, folder, fileName) => {
-  try {
-    const result = await cloudinary.uploader.upload(filePath, {
-      folder: `merchant-branding/${folder}`,
-      public_id: fileName,
-      resource_type: 'image',
-      quality: 'auto:good',
-      fetch_format: 'auto',
-      transformation: [
-        { quality: 'auto:good' },
-        { fetch_format: 'auto' }
-      ]
-    });
-    
-    // Delete temporary file
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-    
-    return {
-      url: result.secure_url,
-      publicId: result.public_id,
-      width: result.width,
-      height: result.height,
-      format: result.format
-    };
-  } catch (error) {
-    // Clean up temp file
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-    throw error;
-  }
-};
-
-// Helper to delete from Cloudinary
-const deleteFromCloudinary = async (publicId) => {
-  try {
-    if (!publicId) return;
-    await cloudinary.uploader.destroy(publicId);
-  } catch (error) {
-    console.warn('Cloudinary delete warning:', error.message);
-    // Non-critical error
-  }
-};
 
 // Mobile-optimized: Upload Banner Image
 export const uploadBannerImage = async (req, res) => {
@@ -1636,6 +1423,56 @@ export const getBrandingImages = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch branding images'
+    });
+  }
+};
+
+// 9. Get Merchant Status and Next Actions
+export const getMerchantStatus = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const user = await User.findById(userId).select('status userType email');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+    
+    // Check if merchant profile exists and progress
+    const profile = await MerchantProfile.findOne({ userId })
+      .select('registrationStep isRegistrationComplete adminStatus submittedAt');
+    
+    // LOGIC FIX: If registration marked complete but not at step 6, fix it
+    let isRegistrationComplete = profile?.isRegistrationComplete || false;
+    if (isRegistrationComplete && profile?.registrationStep < 6) {
+      isRegistrationComplete = false;
+    }
+    
+    res.status(200).json({
+      success: true,
+      status: user.status,
+      userType: user.userType,
+      email: user.email,
+      canAccessRegistration: user.status === 'pending_approval',
+      canAccessDashboard: user.status === 'active',
+      registration: {
+        step: profile?.registrationStep || 1,
+        isComplete: isRegistrationComplete,
+        hasProfile: !!profile,
+        adminStatus: profile?.adminStatus || 'pending_review',
+        submittedAt: profile?.submittedAt || null
+      },
+      nextAction: getNextAction(user.status, profile, isRegistrationComplete)
+    });
+    
+  } catch (error) {
+    console.error('❌ Get merchant status error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get status'
     });
   }
 };

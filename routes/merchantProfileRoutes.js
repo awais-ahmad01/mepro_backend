@@ -1,4 +1,3 @@
-// routes/businessDetailsRoutes.js
 import express from 'express';
 import {
   getRegistrationProgress,
@@ -12,69 +11,38 @@ import {
   getAllOpeningHours,
   getSuggestedServices,
   validateTimeSlot,
-  checkOpeningHoursCompletion
+  checkOpeningHoursCompletion,
+  getMerchantStatus
 } from '../controllers/merchantProfileController.js';
 import { uploadSingle, handleUploadErrors } from '../middlewares/upload.js';
 import { uploadBannerImage, uploadBusinessLogo, removeBannerImage, removeBusinessLogo, getBrandingImages } from '../controllers/merchantProfileController.js';
+import { checkRegistrationStage } from '../middlewares/auth.js';
 
 const router = express.Router();
 
-// Middleware to check if user is at correct stage
+// Middleware to check if user is at correct stage (TEMPORARY FOR TESTING)
 // const checkRegistrationStage = async (req, res, next) => {
 //   try {
-//     // This would typically check JWT and user status
-//     // For now, we assume req.user is set by auth middleware
-//     console.log("cheking .....")
-//     req.user.id = '69350362d0cef12a10e9db5d';
-//     console.log("req:", req);
+//     console.log("🔧 [TEST MODE] Setting user ID manually...");
+    
+//     // TEMPORARY: Create req.user object for testing
+//     req.user = {
+//       id: '69350362d0cef12a10e9db5d', // Your test user ID
+//       email: 'test@example.com', // Optional, for logging
+//       userType: 'merchant'
+//     };
+    
+//     console.log(`✅ [TEST MODE] User set: ${req.user.id}`);
 //     next();
+    
 //   } catch (error) {
+//     console.error('❌ Middleware error:', error);
 //     res.status(401).json({
 //       success: false,
 //       error: 'Authentication required'
 //     });
 //   }
 // };
-
-
-// Middleware to check if user is at correct stage (TEMPORARY FOR TESTING)
-const checkRegistrationStage = async (req, res, next) => {
-  try {
-    console.log("🔧 [TEST MODE] Setting user ID manually...");
-    
-    // TEMPORARY: Create req.user object for testing
-    req.user = {
-      id: '69350362d0cef12a10e9db5d', // Your test user ID
-      email: 'test@example.com', // Optional, for logging
-      userType: 'merchant'
-    };
-    
-    console.log(`✅ [TEST MODE] User set: ${req.user.id}`);
-    next();
-    
-  } catch (error) {
-    console.error('❌ Middleware error:', error);
-    res.status(401).json({
-      success: false,
-      error: 'Authentication required'
-    });
-  }
-};
-
-// Alternative: Simple middleware without try-catch
-const simpleTestMiddleware = (req, res, next) => {
-  console.log("🛠️ Using simple test middleware");
-  
-  // Set test user data directly
-  req.user = {
-    id: '69350362d0cef12a10e9db5d',
-    email: 'test@example.com',
-    userType: 'merchant'
-  };
-  
-  console.log(`✅ Test user ID: ${req.user.id}`);
-  next();
-};
 
 
 
@@ -87,12 +55,12 @@ router.put('/navigate', checkRegistrationStage, updateRegistrationStep);
 // Opening Hours (Step 4)
 router.post('/opening-hours', checkRegistrationStage, saveOpeningHours);
 router.get('/opening-hours', checkRegistrationStage, getAllOpeningHours);
-router.get('/opening-hours/:day', checkRegistrationStage, getDayOpeningHours);
-router.post('/validate-time-slot', checkRegistrationStage, validateTimeSlot);
-router.get('/opening-hours-completion', checkRegistrationStage, checkOpeningHoursCompletion);
+// router.get('/opening-hours/:day', checkRegistrationStage, getDayOpeningHours);
+// router.post('/validate-time-slot', checkRegistrationStage, validateTimeSlot);
+// router.get('/opening-hours-completion', checkRegistrationStage, checkOpeningHoursCompletion);
 
 // Services (Step 5)
-router.get('/suggested-services/:category', checkRegistrationStage, getSuggestedServices);
+// router.get('/suggested-services/:category', checkRegistrationStage, getSuggestedServices);
 
 // Submission
 router.post('/submit', checkRegistrationStage, submitForReview);
@@ -112,9 +80,10 @@ router.post('/upload/logo',
   handleUploadErrors,
   uploadBusinessLogo
 );
-
 router.delete('/remove/banner', checkRegistrationStage, removeBannerImage);
 router.delete('/remove/logo', checkRegistrationStage, removeBusinessLogo);
 router.get('/branding', checkRegistrationStage, getBrandingImages);
+
+router.get('/status', checkRegistrationStage, getMerchantStatus);
 
 export default router;

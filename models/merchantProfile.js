@@ -191,7 +191,7 @@ const merchantProfileSchema = new mongoose.Schema(
     services: [
       {
         name: { type: String, required: true, trim: true },
-        categorySpecific: { type: Boolean, default: false },
+        // categorySpecific: { type: Boolean, default: false },
       },
     ],
 
@@ -212,7 +212,23 @@ const merchantProfileSchema = new mongoose.Schema(
         default: 30000,
         min: 0,
       },
+       platinum: {
+        type: Number,
+        default: 50000,
+        min: 0,
+      },
+      champion: {
+        type: Number,
+        default: 5000,
+        min: 0,
+      },
+      ultimate: {
+        type: Number,
+        default: 50000,
+        min: 0,
+      },
     },
+    
 
   // Business Branding (Optional - Can be added anytime)
 bannerImage: {
