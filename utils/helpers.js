@@ -298,53 +298,50 @@ export const prepareResponse = (profile) => {
 
 
 
-// Helper function to upload to Cloudinary (optimized for mobile)
-export const uploadToCloudinary = async (filePath, folder, fileName) => {
+
+// Upload to Cloudinary
+export const uploadToCloudinary = async (filePath, folder, publicId) => {
   try {
     const result = await cloudinary.uploader.upload(filePath, {
-      folder: `merchant-branding/${folder}`,
-      public_id: fileName,
+      folder: `merchants/${folder}`,
+      public_id: publicId,
       resource_type: 'image',
-      quality: 'auto:good',
-      fetch_format: 'auto',
       transformation: [
         { quality: 'auto:good' },
         { fetch_format: 'auto' }
       ]
     });
     
-    // Delete temporary file
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-    
     return {
       url: result.secure_url,
       publicId: result.public_id,
       width: result.width,
-      height: result.height,
-      format: result.format
+      height: result.height
     };
   } catch (error) {
-    // Clean up temp file
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
+    console.error('Cloudinary upload error:', error);
     throw error;
   }
 };
 
-// Helper to delete from Cloudinary
+// Delete from Cloudinary
 export const deleteFromCloudinary = async (publicId) => {
   try {
-    if (!publicId) return;
-    await cloudinary.uploader.destroy(publicId);
+    const result = await cloudinary.uploader.destroy(publicId, {
+      resource_type: 'image'
+    });
+    
+    if (result.result !== 'ok') {
+      console.warn(`Cloudinary deletion may have failed: ${result.result}`);
+    }
+    
+    return result;
   } catch (error) {
-    console.warn('Cloudinary delete warning:', error.message);
-    // Non-critical error
+    console.error('Cloudinary deletion error:', error);
+    // Don't throw error - continue even if deletion fails
+    return { result: 'error', error: error.message };
   }
 };
-
 
 
 

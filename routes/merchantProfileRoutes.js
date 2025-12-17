@@ -12,10 +12,11 @@ import {
   getSuggestedServices,
   validateTimeSlot,
   checkOpeningHoursCompletion,
+
   getMerchantStatus
 } from '../controllers/merchantProfileController.js';
-import { uploadSingle, handleUploadErrors } from '../middlewares/upload.js';
-import { uploadBannerImage, uploadBusinessLogo, removeBannerImage, removeBusinessLogo, getBrandingImages } from '../controllers/merchantProfileController.js';
+import { uploadSingle, handleUploadErrors, uploadBrandingImages } from '../middlewares/upload.js';
+import { uploadBranding, removeBranding,  getBrandingImages } from '../controllers/merchantProfileController.js';
 import { checkRegistrationStage } from '../middlewares/auth.js';
 
 const router = express.Router();
@@ -66,22 +67,19 @@ router.get('/opening-hours', checkRegistrationStage, getAllOpeningHours);
 router.post('/submit', checkRegistrationStage, submitForReview);
 router.get('/review', checkRegistrationStage, getCompleteProfile);
 
-// Business Branding - Image Upload
-router.post('/upload/banner', 
+// Banner Image Upload
+// Upload both banner and logo in one request
+router.post('/upload-branding', 
   checkRegistrationStage, 
-  uploadSingle('bannerImage'),
+  uploadBrandingImages, // Updated middleware
   handleUploadErrors,
-  uploadBannerImage
+  uploadBranding
 );
 
-router.post('/upload/logo', 
-  checkRegistrationStage, 
-  uploadSingle('businessLogo'),
-  handleUploadErrors,
-  uploadBusinessLogo
-);
-router.delete('/remove/banner', checkRegistrationStage, removeBannerImage);
-router.delete('/remove/logo', checkRegistrationStage, removeBusinessLogo);
+// Remove both banner and logo in one request
+router.delete('/remove-branding', checkRegistrationStage, removeBranding);
+
+// Get branding images
 router.get('/branding', checkRegistrationStage, getBrandingImages);
 
 router.get('/status', checkRegistrationStage, getMerchantStatus);

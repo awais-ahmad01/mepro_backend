@@ -1,8 +1,9 @@
 import User from '../models/user.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { sendOTPEmail } from '../services/sendEmail.js';
-import { generateOTP, generateJWT, generateTempToken} from '../utils/helpers.js';
+import crypto from 'crypto';
+import { sendOTPEmail, sendPasswordResetEmail } from '../services/sendEmail.js';
+import { generateOTP, generateJWT, generateTempToken } from '../utils/helpers.js';
 
 
 // Step 1: Merchant initiates registration with email only - UPDATED
@@ -322,7 +323,7 @@ export const merchantResendOTP = async (req, res) => {
     const { email } = req.body;
 
     // Find user
-    const user = await User.findOne({ email, userType: 'merchant' });
+    const user = await User.findOne({ email });
     
     if (!user) {
       return res.status(404).json({
@@ -470,7 +471,7 @@ export const checkMerchantStatus = async (req, res) => {
 //   }
 // };
 
-// Helper: Login for merchants (supports both registration and full access)
+// Helper: Login for users (supports merchants, customers, admins)
 export const merchantLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -483,8 +484,8 @@ export const merchantLogin = async (req, res) => {
       });
     }
 
-    // Find user
-    const user = await User.findOne({ email, userType: 'merchant' });
+    // Find user (any user type)
+    const user = await User.findOne({ email });
     
     if (!user) {
       return res.status(401).json({
@@ -511,8 +512,13 @@ export const merchantLogin = async (req, res) => {
       });
     }
 
-    // UPDATE HERE: Allow login for multiple statuses
-    const allowedStatuses = ['pending_approval', 'active', 'pending_password'];
+    // Allow login based on user type and status
+    let allowedStatuses = ['active'];
+
+    if (user.userType === 'merchant') {
+      // Merchants can login during registration and when active
+      allowedStatuses = ['pending_approval', 'active', 'pending_password'];
+    }
     
     if (!allowedStatuses.includes(user.status)) {
       let errorMessage = '';
@@ -571,56 +577,139 @@ export const merchantLogin = async (req, res) => {
   }
 };
 
-// Helper: Forgot password for merchants
+// Helper: Forgot password for merchants (secure, production-ready)
 export const merchantForgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
-    // Find user
-    const user = await User.findOne({ email, userType: 'merchant' });
-    
-    if (!user) {
-      // Don't reveal if user exists or not for security
-      return res.status(200).json({
-        success: true,
-        message: 'If an account exists with this email, you will receive a password reset link'
-      });
-    }
-
-    // Check if user has password (completed registration)
-    if (!user.password) {
+    if (!email || !email.includes('@')) {
       return res.status(400).json({
         success: false,
-        error: 'Please complete your registration first'
+        error: 'Valid email is required'
       });
     }
 
-    // Generate reset token
-    const resetToken = jwt.sign(
-      { id: user._id, type: 'password_reset' },
-      process.env.JWT_SECRET || 'your_jwt_secret_key_change_in_production',
-      { expiresIn: '1h' }
-    );
+    const user = await User.findOne({ email });
 
-    // In production, send email with reset link
-    console.log(`Password reset token for ${email}: ${resetToken}`);
-    
-    // Store reset token in user record if needed
-    // user.resetToken = resetToken;
-    // user.resetTokenExpiry = new Date(Date.now() + 1 * 60 * 60 * 1000); // 1 hour
-    // await user.save();
-
-    res.status(200).json({
+    // Always return generic message to avoid user enumeration
+    const genericResponse = {
       success: true,
-      message: 'Password reset instructions sent to email',
-      resetToken // In production, don't send token in response
-    });
+      message: 'If an account exists with this email, you will receive a password reset link shortly.'
+    };
 
+    // If user not found or no password yet, just return generic response
+    if (!user || !user.password) {
+      return res.status(200).json(genericResponse);
+    }
+
+    // Generate secure random token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+    // Store hashed token + expiry (1 hour)
+    user.passwordResetToken = tokenHash;
+    user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000);
+    await user.save();
+
+    try {
+      const baseUrl = process.env.APP_URL || 'http://localhost:5173';
+      const resetUrl = `${baseUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
+
+      await sendPasswordResetEmail(email, resetUrl, email.split('@')[0]);
+    } catch (emailError) {
+      console.error('❌ Error sending password reset email:', emailError);
+      // Do not leak email failure details to client
+    }
+
+    return res.status(200).json(genericResponse);
   } catch (error) {
     console.error('Forgot password error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to process request'
+    });
+  }
+};
+
+// Helper: Reset password using secure token
+export const merchantResetPassword = async (req, res) => {
+  try {
+    const { token, email, password, confirmPassword } = req.body;
+
+    if (!token || !email || !password || !confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Token, email, password and confirmPassword are required'
+      });
+    }
+
+    if (!email.includes('@')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid email is required'
+      });
+    }
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Passwords do not match'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password must be at least 6 characters'
+      });
+    }
+
+    // Hash provided token and look up user
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await User.findOne({
+      email,
+      passwordResetToken: tokenHash,
+      passwordResetExpires: { $gt: new Date() }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid or expired reset token'
+      });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    user.password = hashedPassword;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    user.updatedAt = new Date();
+
+    await user.save();
+
+    // Issue new JWT so user can be logged in immediately
+    const tokenJwt = generateJWT(user._id, user.userType, user.status);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password has been reset successfully',
+      token: tokenJwt,
+      user: {
+        id: user._id,
+        email: user.email,
+        userType: user.userType,
+        status: user.status
+      }
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to reset password'
     });
   }
 };

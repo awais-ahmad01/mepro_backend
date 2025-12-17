@@ -313,6 +313,119 @@ const generateWelcomeEmailHTML = (userName = "Merchant") => {
   `;
 };
 
+// Password Reset Email Template
+const generatePasswordResetEmailHTML = (resetUrl, userName = "Merchant") => {
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Reset Your Mepro Password</title>
+      <style>
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+          font-family: 'Arial', sans-serif;
+        }
+
+        .email-container {
+          max-width: 600px;
+          margin: 0 auto;
+          background-color: #f8f9fa;
+          padding: 20px;
+        }
+
+        .header {
+          text-align: center;
+          padding: 20px 0;
+          background-color: #4f46e5;
+          color: white;
+          border-radius: 8px 8px 0 0;
+        }
+
+        .content {
+          background-color: white;
+          padding: 30px;
+          border-radius: 0 0 8px 8px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .greeting {
+          margin-bottom: 20px;
+          color: #333;
+        }
+
+        .cta-button {
+          display: inline-block;
+          margin: 20px 0;
+          padding: 12px 24px;
+          background-color: #4f46e5;
+          color: white;
+          text-decoration: none;
+          border-radius: 999px;
+          font-weight: bold;
+        }
+
+        .note {
+          background-color: #fef3c7;
+          border-left: 4px solid #f59e0b;
+          padding: 15px;
+          margin: 20px 0;
+          border-radius: 4px;
+          color: #92400e;
+        }
+
+        .footer {
+          text-align: center;
+          margin-top: 30px;
+          padding-top: 20px;
+          border-top: 1px solid #e5e7eb;
+          color: #6b7280;
+          font-size: 14px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="email-container">
+        <div class="header">
+          <h1>Reset Your Password</h1>
+        </div>
+
+        <div class="content">
+          <div class="greeting">
+            <h2>Hello ${userName},</h2>
+            <p>We received a request to reset the password for your Mepro merchant account.</p>
+          </div>
+
+          <p>To reset your password, click the button below. This link will expire in 1 hour for your security.</p>
+
+          <p style="text-align: center;">
+            <a href="${resetUrl}" class="cta-button">Reset Password</a>
+          </p>
+
+          <p>If the button above does not work, copy and paste this link into your browser:</p>
+          <p style="word-break: break-all; color: #2563eb; margin: 10px 0;">${resetUrl}</p>
+
+          <div class="note">
+            <p><strong>Important security tips:</strong></p>
+            <p>• This link is valid for one use only and will expire in 1 hour.</p>
+            <p>• If you did not request a password reset, you can safely ignore this email.</p>
+            <p>• Never share this link or your new password with anyone.</p>
+          </div>
+
+          <div class="footer">
+            <p>This is an automated message, please do not reply to this email.</p>
+            <p>© ${new Date().getFullYear()} Mepro. All rights reserved.</p>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+};
+
 // Email sending functions
 export const sendOTPEmail = async (email, otp, userName = null) => {
   try {
@@ -397,6 +510,35 @@ export const sendAdminApprovalEmail = async (email, approved = true, reason = nu
   } catch (error) {
     console.error("❌ Error sending admin approval email:", error);
     throw error;
+  }
+};
+
+// Password reset email
+export const sendPasswordResetEmail = async (email, resetUrl, userName = null) => {
+  try {
+    const subject = "Mepro Password Reset Instructions";
+    const text = `You requested a password reset for your Mepro merchant account. 
+To reset your password, open the following link in your browser:\n\n${resetUrl}\n\n
+This link expires in 1 hour. If you did not request this, you can ignore this email.`;
+    const html = generatePasswordResetEmailHTML(resetUrl, userName || email.split('@')[0]);
+
+    const info = await transporter.sendMail({
+      from: `"Mepro" <${process.env.EMAIL_FROM}>`,
+      to: email,
+      subject,
+      text,
+      html
+    });
+
+    console.log("✅ Password reset email sent to:", email, "Message ID:", info.messageId);
+    return {
+      success: true,
+      messageId: info.messageId,
+      email
+    };
+  } catch (error) {
+    console.error("❌ Error sending password reset email:", error);
+    throw new Error(`Failed to send password reset email: ${error.message}`);
   }
 };
 

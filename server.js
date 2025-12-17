@@ -5,6 +5,13 @@ dotenv.config();
 import mongoose from 'mongoose';
 import merchantAuthRoutes from './routes/merchantAuthRoutes.js';
 import merchantProfileRoutes from './routes/merchantProfileRoutes.js';
+import authRoutes from './routes/authRoutes.js';
+import priceListRoutes from './routes/priceListRoutes.js';
+import rewardRoutes from './routes/rewardRoutes.js';
+import promotionRoutes from './routes/promotionRoutes.js';
+import loyaltyProgramRoutes from './routes/loyaltyProgramRoutes.js';
+import scratchCardRoutes from './routes/scratchCardRoutes.js';
+import diamondPromotionRoutes from './routes/diamondPromotionRoutes.js';
 
 
 // Connect to MongoDB
@@ -27,7 +34,22 @@ app.use(cors({
 
 
 // Routes
+// Merchant registration (signup) flow
 app.use('/api/auth/merchant', merchantAuthRoutes);
+// Global auth (login / forgot-password / reset-password) for all user types
+app.use('/api/auth', authRoutes);
+// Merchant price lists (categories + items)
+app.use('/api/merchant/price-lists', priceListRoutes);
+// Merchant rewards
+app.use('/api/merchant/rewards', rewardRoutes);
+// Merchant promotions
+app.use('/api/merchant/promotions', promotionRoutes);
+// Merchant loyalty programs
+app.use('/api/merchant/loyalty-programs', loyaltyProgramRoutes);
+// Merchant scratch cards
+app.use('/api/merchant/scratch-cards', scratchCardRoutes);
+// Merchant diamond promotions
+app.use('/api/merchant/diamond-promotions', diamondPromotionRoutes);
 app.use('/api/merchant/business', merchantProfileRoutes);
 
 

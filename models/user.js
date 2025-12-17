@@ -9,24 +9,24 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     trim: true
   },
-password: {
-  type: String,
-  required: function() {
-    // For customers: always require password
-    if (this.userType === 'customer') {
-      return true;
+  password: {
+    type: String,
+    required: function () {
+      // For customers: always require password
+      if (this.userType === 'customer') {
+        return true;
+      }
+      // For merchants: require password only when status is 'pending_approval' or 'active'
+      if (this.userType === 'merchant') {
+        return this.status === 'pending_approval' || this.status === 'active';
+      }
+      // For admins: always require password
+      if (this.userType === 'admin') {
+        return true;
+      }
+      return false;
     }
-    // For merchants: require password only when status is 'pending_approval' or 'active'
-    if (this.userType === 'merchant') {
-      return this.status === 'pending_approval' || this.status === 'active';
-    }
-    // For admins: always require password
-    if (this.userType === 'admin') {
-      return true;
-    }
-    return false;
-  }
-},
+  },
   userType: {
     type: String,
     enum: ['merchant', 'customer', 'admin'],
@@ -37,10 +37,10 @@ password: {
     default: false
   },
   verificationCode: {
-    type: String,
+    type: String
   },
   verificationExpiry: {
-    type: Date,
+    type: Date
   },
   status: {
     type: String,
@@ -56,12 +56,20 @@ password: {
   },
   lastLogin: {
     type: Date
+  },
+  // Secure password reset fields (hashed token + expiry)
+  passwordResetToken: {
+    type: String,
+    index: true
+  },
+  passwordResetExpires: {
+    type: Date
   }
 }, {
   timestamps: true // Adds createdAt and updatedAt automatically
 });
 
-userSchema.methods.isVerificationCodeValid = function() {
+userSchema.methods.isVerificationCodeValid = function () {
   if (!this.verificationCode || !this.verificationExpiry) {
     return false;
   }

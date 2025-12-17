@@ -1141,258 +1141,280 @@ export const getCompleteProfile = async (req, res) => {
 
 
 
-// Mobile-optimized: Upload Banner Image
-export const uploadBannerImage = async (req, res) => {
-  try {
-    const userId = req.user.id;
+// controllers/merchantProfileController.js - ADD THESE NEW FUNCTIONS
 
-    console.log('🚀 Received banner upload request:', userId);
-    
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: 'No image file provided'
-      });
-    }
-    
-    console.log(`📸 Uploading banner for user: ${userId}`);
-    
-    // Generate unique filename for mobile
-    const uniqueName = `banner_${userId}_${Date.now()}`;
-    
-    // Upload to Cloudinary
-    const uploadResult = await uploadToCloudinary(
-      req.file.path, 
-      'banners',
-      uniqueName
-    );
-
-    console.log('☁️ Cloudinary upload result:', uploadResult);
-    
-    // Update profile
-    let profile = await MerchantProfile.findOne({ userId });
-    if (!profile) {
-      // If no profile exists yet, create one
-      profile = await MerchantProfile.create({ userId });
-    }
-
-    console.log('📝 Updating profile with new banner info:', profile);
-    
-    // Delete old banner if exists
-    if (profile.bannerImage && profile.bannerImage.publicId) {
-      await deleteFromCloudinary(profile.bannerImage.publicId);
-    }
-    
-    // Store both URL and publicId for easier deletion
-    profile.bannerImage = {
-      url: uploadResult.url,
-      publicId: uploadResult.publicId,
-      uploadedAt: new Date(),
-      dimensions: {
-        width: uploadResult.width,
-        height: uploadResult.height
-      }
-    };
-    
-    profile.brandingUpdatedAt = new Date();
-
-    console.log('📝 Saving updated profile with new banner info...');
-    await profile.save();
-    
-    console.log(`✅ Banner uploaded: ${uploadResult.url.substring(0, 50)}...`);
-    
-    res.status(200).json({
-      success: true,
-      message: 'Banner uploaded successfully',
-      bannerImage: uploadResult.url,
-      dimensions: {
-        width: uploadResult.width,
-        height: uploadResult.height
-      },
-      uploadedAt: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    console.error('❌ Banner upload error:', error);
-    
-    // Clean up
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-    
-    res.status(500).json({
-      success: false,
-      error: 'Failed to upload banner',
-      details: error.message
-    });
-  }
-};
-
-// Mobile-optimized: Upload Business Logo
-export const uploadBusinessLogo = async (req, res) => {
+// 1. Single API to upload both banner and logo
+export const uploadBranding = async (req, res) => {
   try {
     const userId = req.user.id;
     
-    if (!req.file) {
+    console.log(`🎨 Uploading branding images for user: ${userId}`);
+    
+    // Check if any files were uploaded
+    if (!req.files || Object.keys(req.files).length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'No logo file provided'
+        error: 'No files uploaded. Please provide bannerImage or businessLogo.'
       });
     }
     
-    console.log(`📸 Uploading logo for user: ${userId}`);
-    
-    // Generate unique filename
-    const uniqueName = `logo_${userId}_${Date.now()}`;
-    
-    // Upload to Cloudinary
-    const uploadResult = await uploadToCloudinary(
-      req.file.path, 
-      'logos',
-      uniqueName
-    );
-    
-    // Update profile
+    // Get or create profile
     let profile = await MerchantProfile.findOne({ userId });
     if (!profile) {
       profile = await MerchantProfile.create({ userId });
     }
     
-    // Delete old logo if exists
-    if (profile.businessLogo && profile.businessLogo.publicId) {
-      await deleteFromCloudinary(profile.businessLogo.publicId);
-    }
-    
-    // Store logo info
-    profile.businessLogo = {
-      url: uploadResult.url,
-      publicId: uploadResult.publicId,
-      uploadedAt: new Date(),
-      dimensions: {
-        width: uploadResult.width,
-        height: uploadResult.height
-      }
+    const uploadResults = {
+      bannerImage: null,
+      businessLogo: null,
+      errors: []
     };
     
+    // Process banner image if uploaded
+    if (req.files['bannerImage']) {
+      try {
+        const bannerFile = req.files['bannerImage'][0];
+        
+        // Delete old banner if exists
+        if (profile.bannerImage && profile.bannerImage.publicId) {
+          await deleteFromCloudinary(profile.bannerImage.publicId);
+        }
+        
+        // Store banner info
+        profile.bannerImage = {
+          url: bannerFile.path,
+          publicId: bannerFile.filename,
+          uploadedAt: new Date(),
+          dimensions: {
+            width: bannerFile.width || null,
+            height: bannerFile.height || null
+          }
+        };
+        
+        uploadResults.bannerImage = {
+          url: bannerFile.path,
+          dimensions: profile.bannerImage.dimensions,
+          uploadedAt: profile.bannerImage.uploadedAt
+        };
+        
+        console.log(`✅ Banner uploaded for user: ${userId}`);
+      } catch (bannerError) {
+        console.error('❌ Banner upload error:', bannerError);
+        uploadResults.errors.push({
+          type: 'bannerImage',
+          error: bannerError.message
+        });
+      }
+    }
+    
+    // Process business logo if uploaded
+    if (req.files['businessLogo']) {
+      try {
+        const logoFile = req.files['businessLogo'][0];
+        
+        // Delete old logo if exists
+        if (profile.businessLogo && profile.businessLogo.publicId) {
+          await deleteFromCloudinary(profile.businessLogo.publicId);
+        }
+        
+        // Store logo info
+        profile.businessLogo = {
+          url: logoFile.path,
+          publicId: logoFile.filename,
+          uploadedAt: new Date(),
+          dimensions: {
+            width: logoFile.width || null,
+            height: logoFile.height || null
+          }
+        };
+        
+        uploadResults.businessLogo = {
+          url: logoFile.path,
+          dimensions: profile.businessLogo.dimensions,
+          uploadedAt: profile.businessLogo.uploadedAt
+        };
+        
+        console.log(`✅ Logo uploaded for user: ${userId}`);
+      } catch (logoError) {
+        console.error('❌ Logo upload error:', logoError);
+        uploadResults.errors.push({
+          type: 'businessLogo',
+          error: logoError.message
+        });
+      }
+    }
+    
+    // Update branding timestamp
     profile.brandingUpdatedAt = new Date();
     await profile.save();
     
-    console.log(`✅ Logo uploaded: ${uploadResult.url.substring(0, 50)}...`);
+    console.log(`✅ Branding upload completed for user: ${userId}`);
     
-    res.status(200).json({
+    // Prepare response
+    const response = {
       success: true,
-      message: 'Logo uploaded successfully',
-      businessLogo: uploadResult.url,
-      dimensions: {
-        width: uploadResult.width,
-        height: uploadResult.height
+      message: 'Branding images uploaded successfully',
+      uploadedImages: {
+        bannerImage: uploadResults.bannerImage ? {
+          url: uploadResults.bannerImage.url,
+          uploaded: true,
+          dimensions: uploadResults.bannerImage.dimensions
+        } : { uploaded: false },
+        businessLogo: uploadResults.businessLogo ? {
+          url: uploadResults.businessLogo.url,
+          uploaded: true,
+          dimensions: uploadResults.businessLogo.dimensions
+        } : { uploaded: false }
       },
-      uploadedAt: new Date().toISOString()
-    });
+      timestamp: new Date().toISOString()
+    };
     
-  } catch (error) {
-    console.error('❌ Logo upload error:', error);
-    
-    // Clean up
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+    // Add errors if any
+    if (uploadResults.errors.length > 0) {
+      response.warnings = uploadResults.errors;
+      response.partialSuccess = true;
     }
     
+    res.status(200).json(response);
+    
+  } catch (error) {
+    console.error('❌ Branding upload error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to upload logo',
+      error: 'Failed to upload branding images',
       details: error.message
     });
   }
 };
 
-// Remove Banner Image
-export const removeBannerImage = async (req, res) => {
+// 2. Single API to remove both banner and logo
+export const removeBranding = async (req, res) => {
   try {
     const userId = req.user.id;
+    const { removeBanner, removeLogo } = req.body;
     
-    console.log(`🗑️ Removing banner for user: ${userId}`);
+    console.log(`🗑️ Removing branding images for user: ${userId}`, { removeBanner, removeLogo });
     
-    const profile = await MerchantProfile.findOne({ userId });
-    
-    if (!profile || !profile.bannerImage) {
-      return res.status(200).json({
-        success: true,
-        message: 'No banner image found'
+    // Validate request
+    if (!removeBanner && !removeLogo) {
+      return res.status(400).json({
+        success: false,
+        error: 'Specify what to remove: removeBanner and/or removeLogo'
       });
     }
     
-    // Delete from Cloudinary
-    const publicId = profile.bannerImage.publicId;
-    if (publicId) {
-      await deleteFromCloudinary(publicId);
+    const profile = await MerchantProfile.findOne({ userId });
+    
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        error: 'Profile not found'
+      });
     }
     
-    // Remove from profile
-    profile.bannerImage = null;
-    profile.brandingUpdatedAt = new Date();
-    await profile.save();
+    const removalResults = {
+      bannerRemoved: false,
+      logoRemoved: false,
+      errors: []
+    };
     
-    console.log(`✅ Banner removed for user: ${userId}`);
+    // Remove banner if requested
+    if (removeBanner && profile.bannerImage) {
+      try {
+        // Delete from Cloudinary
+        if (profile.bannerImage.publicId) {
+          await deleteFromCloudinary(profile.bannerImage.publicId);
+        }
+        
+        // Remove from profile
+        profile.bannerImage = null;
+        removalResults.bannerRemoved = true;
+        console.log(`✅ Banner removed for user: ${userId}`);
+      } catch (bannerError) {
+        console.error('❌ Banner removal error:', bannerError);
+        removalResults.errors.push({
+          type: 'bannerImage',
+          error: bannerError.message
+        });
+      }
+    } else if (removeBanner && !profile.bannerImage) {
+      removalResults.errors.push({
+        type: 'bannerImage',
+        error: 'No banner image found to remove'
+      });
+    }
     
-    res.status(200).json({
+    // Remove logo if requested
+    if (removeLogo && profile.businessLogo) {
+      try {
+        // Delete from Cloudinary
+        if (profile.businessLogo.publicId) {
+          await deleteFromCloudinary(profile.businessLogo.publicId);
+        }
+        
+        // Remove from profile
+        profile.businessLogo = null;
+        removalResults.logoRemoved = true;
+        console.log(`✅ Logo removed for user: ${userId}`);
+      } catch (logoError) {
+        console.error('❌ Logo removal error:', logoError);
+        removalResults.errors.push({
+          type: 'businessLogo',
+          error: logoError.message
+        });
+      }
+    } else if (removeLogo && !profile.businessLogo) {
+      removalResults.errors.push({
+        type: 'businessLogo',
+        error: 'No logo found to remove'
+      });
+    }
+    
+    // Update branding timestamp if anything was removed
+    if (removalResults.bannerRemoved || removalResults.logoRemoved) {
+      profile.brandingUpdatedAt = new Date();
+      await profile.save();
+    }
+    
+    console.log(`✅ Branding removal completed for user: ${userId}`);
+    
+    // Prepare response
+    const response = {
       success: true,
-      message: 'Banner removed successfully'
-    });
+      message: 'Branding images removed successfully',
+      removedImages: {
+        bannerImage: removalResults.bannerRemoved,
+        businessLogo: removalResults.logoRemoved
+      },
+      timestamp: new Date().toISOString()
+    };
+    
+    // Add errors if any
+    if (removalResults.errors.length > 0) {
+      response.warnings = removalResults.errors;
+      if (removalResults.errors.length === (removeBanner ? 1 : 0) + (removeLogo ? 1 : 0)) {
+        // All operations failed
+        response.success = false;
+        response.message = 'Failed to remove branding images';
+      } else {
+        // Partial success
+        response.partialSuccess = true;
+      }
+    }
+    
+    res.status(200).json(response);
     
   } catch (error) {
-    console.error('❌ Remove banner error:', error);
+    console.error('❌ Branding removal error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to remove banner'
+      error: 'Failed to remove branding images',
+      details: error.message
     });
   }
 };
 
-// Remove Business Logo
-export const removeBusinessLogo = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    
-    console.log(`🗑️ Removing logo for user: ${userId}`);
-    
-    const profile = await MerchantProfile.findOne({ userId });
-    
-    if (!profile || !profile.businessLogo) {
-      return res.status(200).json({
-        success: true,
-        message: 'No business logo found'
-      });
-    }
-    
-    // Delete from Cloudinary
-    const publicId = profile.businessLogo.publicId;
-    if (publicId) {
-      await deleteFromCloudinary(publicId);
-    }
-    
-    // Remove from profile
-    profile.businessLogo = null;
-    profile.brandingUpdatedAt = new Date();
-    await profile.save();
-    
-    console.log(`✅ Logo removed for user: ${userId}`);
-    
-    res.status(200).json({
-      success: true,
-      message: 'Business logo removed successfully'
-    });
-    
-  } catch (error) {
-    console.error('❌ Remove logo error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to remove logo'
-    });
-  }
-};
-
-// Get Branding Images
+// 3. Enhanced getBrandingImages function (keep existing)
 export const getBrandingImages = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -1405,14 +1427,24 @@ export const getBrandingImages = async (req, res) => {
         success: true,
         bannerImage: null,
         businessLogo: null,
-        brandingUpdatedAt: null
+        brandingUpdatedAt: null,
+        hasBanner: false,
+        hasLogo: false
       });
     }
     
     res.status(200).json({
       success: true,
-      bannerImage: profile.bannerImage?.url || null,
-      businessLogo: profile.businessLogo?.url || null,
+      bannerImage: profile.bannerImage ? {
+        url: profile.bannerImage.url,
+        dimensions: profile.bannerImage.dimensions,
+        uploadedAt: profile.bannerImage.uploadedAt
+      } : null,
+      businessLogo: profile.businessLogo ? {
+        url: profile.businessLogo.url,
+        dimensions: profile.businessLogo.dimensions,
+        uploadedAt: profile.businessLogo.uploadedAt
+      } : null,
       brandingUpdatedAt: profile.brandingUpdatedAt || null,
       hasBanner: !!profile.bannerImage,
       hasLogo: !!profile.businessLogo
