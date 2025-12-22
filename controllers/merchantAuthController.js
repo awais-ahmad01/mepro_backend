@@ -40,7 +40,8 @@ export const merchantInitiateRegistration = async (req, res) => {
           return res.status(200).json({
             success: true,
             message: 'OTP resent to email',
-            userId: existingUser._id
+            userId: existingUser._id,
+            status: existingUser.status
           });
         } catch (emailError) {
           console.error('Failed to send OTP email:', emailError);
@@ -54,6 +55,7 @@ export const merchantInitiateRegistration = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'Email already registered',
+        userId: existingUser._id,
         userType: existingUser.userType,
         status: existingUser.status
       });
@@ -81,7 +83,8 @@ export const merchantInitiateRegistration = async (req, res) => {
         success: true,
         message: 'OTP sent to email',
         userId: newUser._id,
-        email: newUser.email
+        email: newUser.email,
+        status: newUser.status
       });
       
     } catch (emailError) {
@@ -208,6 +211,7 @@ export const merchantVerifyOTP = async (req, res) => {
       message: 'Email verified successfully',
       // token: tempToken,
       userId: user._id,
+      status: user.status,
       nextStep: 'set_password'
     });
 
