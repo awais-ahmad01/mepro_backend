@@ -44,6 +44,15 @@ const merchantProfileSchema = new mongoose.Schema(
         "limited_liability_partnership",
       ],
     },
+    isVATRegistered: {
+      type: Boolean,
+      default: false,
+    },
+    vatRegistrationNumber: {
+      type: String,
+      trim: true,
+      maxlength: 50,
+    },
 
     // Step 2: Contact Details
     primaryContactName: {

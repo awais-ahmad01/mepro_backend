@@ -162,6 +162,17 @@ export const saveStepData = async (req, res) => {
         profile.legalBusinessName = data.legalBusinessName?.trim();
         profile.aboutBusiness = data.aboutBusiness?.trim();
         profile.businessStructure = data.businessStructure;
+        
+        // Handle VAT registration
+        const isVATRegistered = data.isVATRegistered === true || data.isVATRegistered === 'true' || data.isVATRegistered === 1;
+        profile.isVATRegistered = isVATRegistered;
+        
+        if (isVATRegistered) {
+          profile.vatRegistrationNumber = data.vatRegistrationNumber?.trim() || null;
+        } else {
+          // Clear VAT number if not registered
+          profile.vatRegistrationNumber = null;
+        }
         break;
         
       case 2:
@@ -828,7 +839,9 @@ export const getStepData = async (req, res) => {
         stepData = {
           legalBusinessName: profile.legalBusinessName,
           aboutBusiness: profile.aboutBusiness,
-          businessStructure: profile.businessStructure
+          businessStructure: profile.businessStructure,
+          isVATRegistered: profile.isVATRegistered || false,
+          vatRegistrationNumber: profile.vatRegistrationNumber || null
         };
         break;
       case 2:

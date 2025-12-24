@@ -95,6 +95,19 @@ export const validateStepData = (step, data) => {
       if (!['sole_trader', 'limited_company', 'partnership', 'limited_liability_partnership'].includes(data.businessStructure)) {
         throw new Error('Invalid business structure selected');
       }
+      // Validate VAT registration
+      const isVATRegistered = data.isVATRegistered === true || data.isVATRegistered === 'true' || data.isVATRegistered === 1;
+      if (isVATRegistered) {
+        if (!data.vatRegistrationNumber || data.vatRegistrationNumber.trim().length === 0) {
+          throw new Error('VAT registration number is required when VAT registered is enabled');
+        }
+        if (data.vatRegistrationNumber.trim().length < 2) {
+          throw new Error('VAT registration number must be at least 2 characters');
+        }
+        if (data.vatRegistrationNumber.trim().length > 50) {
+          throw new Error('VAT registration number cannot exceed 50 characters');
+        }
+      }
       break;
       
     case 2:
@@ -256,7 +269,9 @@ export const prepareResponse = (profile) => {
       response.profile.step1 = {
         legalBusinessName: profile.legalBusinessName,
         aboutBusiness: profile.aboutBusiness,
-        businessStructure: profile.businessStructure
+        businessStructure: profile.businessStructure,
+        isVATRegistered: profile.isVATRegistered || false,
+        vatRegistrationNumber: profile.vatRegistrationNumber || null
       };
       break;
     case 2:
