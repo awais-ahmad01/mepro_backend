@@ -173,6 +173,15 @@ export const saveStepData = async (req, res) => {
           // Clear VAT number if not registered
           profile.vatRegistrationNumber = null;
         }
+        
+        // Handle Company Registration Number (only for LTD and LLP)
+        const requiresCompanyRegNumber = data.businessStructure === 'limited_company' || data.businessStructure === 'limited_liability_partnership';
+        if (requiresCompanyRegNumber) {
+          profile.companyRegistrationNumber = data.companyRegistrationNumber?.trim() || null;
+        } else {
+          // Clear company registration number if not LTD or LLP
+          profile.companyRegistrationNumber = null;
+        }
         break;
         
       case 2:
@@ -336,32 +345,93 @@ export const saveStepData = async (req, res) => {
     console.log(`📊 Registration status: isRegistrationComplete = ${profile.isRegistrationComplete}`);
     console.log(`📊 Current step: ${profile.registrationStep}`);
     
+    // If this is step 6, validate all steps and mark as complete if all validations pass
+    if (stepNumber === 6) {
+      // Validate all required fields from steps 1-6 (same logic as submitForReview)
+      const requiredFields = [
+        { field: profile.legalBusinessName, step: 1, message: 'Legal Business Name' },
+        { field: profile.aboutBusiness, step: 1, message: 'About Business' },
+        { field: profile.businessStructure, step: 1, message: 'Business Structure' },
+        { field: profile.primaryContactName, step: 2, message: 'Primary Contact Name' },
+        { field: profile.businessPhone, step: 2, message: 'Business Phone' },
+        { field: profile.address?.postcode, step: 3, message: 'Postcode' },
+        { field: profile.businessCategory, step: 5, message: 'Business Category' },
+        { field: profile.earningRate, step: 5, message: 'Earning Rate' },
+        { field: profile.services?.length > 0, step: 5, message: 'Services' },
+        { field: profile.loyaltyTiers?.bronze, step: 6, message: 'Loyalty Tiers' }
+      ];
+      
+      const missingFields = requiredFields.filter(item => !item.field);
+      
+      // Check Company Registration Number for LTD and LLP
+      const requiresCompanyRegNumber = profile.businessStructure === 'limited_company' || profile.businessStructure === 'limited_liability_partnership';
+      if (requiresCompanyRegNumber && (!profile.companyRegistrationNumber || profile.companyRegistrationNumber.trim().length === 0)) {
+        missingFields.push({ step: 1, message: 'Company Registration Number' });
+      }
+      
+      // Check opening hours completion
+      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      const pendingOpeningDays = days.filter(day => {
+        const dayHours = profile.openingHours[day];
+        return !dayHours || (!dayHours.isClosed && (!dayHours.openingTime || !dayHours.closingTime));
+      });
+      
+      // If all validations pass, mark registration as complete
+      if (missingFields.length === 0 && pendingOpeningDays.length === 0) {
+        profile.isRegistrationComplete = true;
+        profile.adminStatus = 'pending_review';
+        profile.submittedAt = new Date();
+        profile.registrationStep = 6;
+        
+        await profile.save();
+        
+        // Update user status
+        await User.findByIdAndUpdate(userId, { 
+          status: 'pending_approval',
+          updatedAt: new Date()
+        });
+        
+        console.log(`✅ All steps validated and registration marked as complete for user: ${userId}`);
+        console.log(`📅 Submitted at: ${profile.submittedAt}`);
+      } else {
+        console.log(`⚠️ Step 6 saved but registration incomplete. Missing fields: ${missingFields.length}, Pending opening days: ${pendingOpeningDays.length}`);
+      }
+    }
+    
     // Prepare response with updated progress
     const response = prepareResponse(profile);
     response.message = `Step ${stepNumber} saved successfully`;
     
-    // If this is step 6 AND all data is complete, mark as ready for submission
+    // If this is step 6, provide appropriate response based on completion status
     if (stepNumber === 6) {
-      // Check if all required fields are filled for step 6
-      const hasAllTiers = profile.loyaltyTiers?.bronze && 
-                         profile.loyaltyTiers?.silver && 
-                         profile.loyaltyTiers?.gold;
-      
-      if (hasAllTiers) {
-        response.nextAction = 'review_submission';
-        response.isReadyForSubmission = true;
+      if (profile.isRegistrationComplete) {
+        // response.nextAction = 'review_submission';
+        // response.isReadyForSubmission = true;
+        response.isRegistrationComplete = true;
+        response.submittedAt = profile.submittedAt;
+        response.message = 'Step 6 saved successfully. Registration is complete and submitted for review.';
       } else {
         response.nextAction = 'complete_step';
         response.isReadyForSubmission = false;
+        response.isRegistrationComplete = false;
+        // Check if all required fields are filled for step 6
+        const hasAllTiers = profile.loyaltyTiers?.bronze && 
+                           profile.loyaltyTiers?.silver && 
+                           profile.loyaltyTiers?.gold;
+        if (!hasAllTiers) {
+          response.message = 'Step 6 saved. Please complete all loyalty tier fields.';
+        } else {
+          response.message = 'Step 6 saved. Please complete all previous steps before submission.';
+        }
       }
     } else {
       response.nextStep = stepNumber + 1;
     }
     
     // Add suggested services if step 5
-    if (stepNumber === 5 && profile.businessCategory) {
-      response.suggestedServices = SERVICE_CATEGORIES[profile.businessCategory] || [];
-    }
+    // if (stepNumber === 5 && profile.businessCategory) {
+    //   response.suggestedServices = SERVICE_CATEGORIES[profile.businessCategory] || [];
+    // }
     
     // Add warnings if editing after submission
     if (profile.submittedAt && !profile.isRegistrationComplete) {
@@ -841,7 +911,8 @@ export const getStepData = async (req, res) => {
           aboutBusiness: profile.aboutBusiness,
           businessStructure: profile.businessStructure,
           isVATRegistered: profile.isVATRegistered || false,
-          vatRegistrationNumber: profile.vatRegistrationNumber || null
+          vatRegistrationNumber: profile.vatRegistrationNumber || null,
+          companyRegistrationNumber: profile.companyRegistrationNumber || null
         };
         break;
       case 2:
@@ -1009,6 +1080,12 @@ export const submitForReview = async (req, res) => {
     
     const missingFields = requiredFields.filter(item => !item.field);
     
+    // Check Company Registration Number for LTD and LLP
+    const requiresCompanyRegNumber = profile.businessStructure === 'limited_company' || profile.businessStructure === 'limited_liability_partnership';
+    if (requiresCompanyRegNumber && (!profile.companyRegistrationNumber || profile.companyRegistrationNumber.trim().length === 0)) {
+      missingFields.push({ step: 1, message: 'Company Registration Number' });
+    }
+    
     console.log('❌ Missing fields:', missingFields);
     
     if (missingFields.length > 0) {
@@ -1106,7 +1183,10 @@ export const getCompleteProfile = async (req, res) => {
       step1: {
         legalBusinessName: profile.legalBusinessName,
         aboutBusiness: profile.aboutBusiness,
-        businessStructure: profile.businessStructure
+        businessStructure: profile.businessStructure,
+        isVATRegistered: profile.isVATRegistered || false,
+        vatRegistrationNumber: profile.vatRegistrationNumber || null,
+        companyRegistrationNumber: profile.companyRegistrationNumber || null
       },
       step2: {
         primaryContactName: profile.primaryContactName,
@@ -1128,6 +1208,21 @@ export const getCompleteProfile = async (req, res) => {
       },
       step6: {
         loyaltyTiers: profile.loyaltyTiers
+      },
+      branding: {
+        bannerImage: profile.bannerImage ? {
+          url: profile.bannerImage.url,
+          dimensions: profile.bannerImage.dimensions,
+          uploadedAt: profile.bannerImage.uploadedAt
+        } : null,
+        businessLogo: profile.businessLogo ? {
+          url: profile.businessLogo.url,
+          dimensions: profile.businessLogo.dimensions,
+          uploadedAt: profile.businessLogo.uploadedAt
+        } : null,
+        brandingUpdatedAt: profile.brandingUpdatedAt || null,
+        hasBanner: !!profile.bannerImage,
+        hasLogo: !!profile.businessLogo
       },
       metadata: {
         registrationStep: profile.registrationStep,

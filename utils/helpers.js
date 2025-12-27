@@ -108,6 +108,20 @@ export const validateStepData = (step, data) => {
           throw new Error('VAT registration number cannot exceed 50 characters');
         }
       }
+      
+      // Validate Company Registration Number (only for LTD and LLP)
+      const requiresCompanyRegNumber = data.businessStructure === 'limited_company' || data.businessStructure === 'limited_liability_partnership';
+      if (requiresCompanyRegNumber) {
+        if (!data.companyRegistrationNumber || data.companyRegistrationNumber.trim().length === 0) {
+          throw new Error('Company registration number is required for Limited Company or Limited Liability Partnership');
+        }
+        if (data.companyRegistrationNumber.trim().length < 2) {
+          throw new Error('Company registration number must be at least 2 characters');
+        }
+        if (data.companyRegistrationNumber.trim().length > 50) {
+          throw new Error('Company registration number cannot exceed 50 characters');
+        }
+      }
       break;
       
     case 2:
@@ -271,7 +285,8 @@ export const prepareResponse = (profile) => {
         aboutBusiness: profile.aboutBusiness,
         businessStructure: profile.businessStructure,
         isVATRegistered: profile.isVATRegistered || false,
-        vatRegistrationNumber: profile.vatRegistrationNumber || null
+        vatRegistrationNumber: profile.vatRegistrationNumber || null,
+        companyRegistrationNumber: profile.companyRegistrationNumber || null
       };
       break;
     case 2:

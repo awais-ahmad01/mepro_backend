@@ -12,6 +12,7 @@ import {
   getSuggestedServices,
   validateTimeSlot,
   checkOpeningHoursCompletion,
+  
 
   getMerchantStatus
 } from '../controllers/merchantProfileController.js';
@@ -54,8 +55,8 @@ router.get('/step/:step', checkRegistrationStage, getStepData);
 router.put('/navigate', checkRegistrationStage, updateRegistrationStep);
 
 // Opening Hours (Step 4)
-router.post('/opening-hours', checkRegistrationStage, saveOpeningHours);
-router.get('/opening-hours', checkRegistrationStage, getAllOpeningHours);
+// router.post('/opening-hours', checkRegistrationStage, saveOpeningHours);
+// router.get('/opening-hours', checkRegistrationStage, getAllOpeningHours);
 // router.get('/opening-hours/:day', checkRegistrationStage, getDayOpeningHours);
 // router.post('/validate-time-slot', checkRegistrationStage, validateTimeSlot);
 // router.get('/opening-hours-completion', checkRegistrationStage, checkOpeningHoursCompletion);
@@ -64,8 +65,8 @@ router.get('/opening-hours', checkRegistrationStage, getAllOpeningHours);
 // router.get('/suggested-services/:category', checkRegistrationStage, getSuggestedServices);
 
 // Submission
-router.post('/submit', checkRegistrationStage, submitForReview);
-router.get('/review', checkRegistrationStage, getCompleteProfile);
+// router.post('/submit', checkRegistrationStage, submitForReview);
+router.get('/merchantProfile', checkRegistrationStage, getCompleteProfile);
 
 // Banner Image Upload
 // Upload both banner and logo in one request
@@ -80,7 +81,7 @@ router.post('/upload-branding',
 router.delete('/remove-branding', checkRegistrationStage, removeBranding);
 
 // Get branding images
-router.get('/branding', checkRegistrationStage, getBrandingImages);
+// router.get('/branding', checkRegistrationStage, getBrandingImages);
 
 router.get('/status', checkRegistrationStage, getMerchantStatus);
 

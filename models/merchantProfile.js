@@ -53,6 +53,11 @@ const merchantProfileSchema = new mongoose.Schema(
       trim: true,
       maxlength: 50,
     },
+    companyRegistrationNumber: {
+      type: String,
+      trim: true,
+      maxlength: 50,
+    },
 
     // Step 2: Contact Details
     primaryContactName: {

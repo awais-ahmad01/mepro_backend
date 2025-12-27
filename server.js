@@ -12,6 +12,8 @@ import promotionRoutes from './routes/promotionRoutes.js';
 import loyaltyProgramRoutes from './routes/loyaltyProgramRoutes.js';
 import scratchCardRoutes from './routes/scratchCardRoutes.js';
 import diamondPromotionRoutes from './routes/diamondPromotionRoutes.js';
+import vipPricingRoutes from './routes/vipPricingRoutes.js';
+import vipBenefitRoutes from './routes/vipBenefitRoutes.js';
 
 
 // Connect to MongoDB
@@ -50,6 +52,9 @@ app.use('/api/merchant/loyalty-programs', loyaltyProgramRoutes);
 app.use('/api/merchant/scratch-cards', scratchCardRoutes);
 // Merchant diamond promotions
 app.use('/api/merchant/diamond-promotions', diamondPromotionRoutes);
+// Merchant VIP programs (pricing + benefits)
+app.use('/api/merchant/vip-pricing', vipPricingRoutes);
+app.use('/api/merchant/vip-benefits', vipBenefitRoutes);
 app.use('/api/merchant/business', merchantProfileRoutes);
 
 
